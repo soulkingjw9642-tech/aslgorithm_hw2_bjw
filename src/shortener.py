@@ -34,6 +34,11 @@ class URLShortener:
             raise TypeError("url must be a string")
         if not url or url != url.strip():
             raise ValueError("url must not be empty or have surrounding whitespace")
+        if any(
+            character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F
+            for character in url
+        ):
+            raise ValueError("url must not contain whitespace or control characters")
 
         parsed = urlsplit(url)
         if parsed.scheme not in ("http", "https") or not parsed.hostname:

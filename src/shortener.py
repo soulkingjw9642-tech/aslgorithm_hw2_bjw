@@ -2,7 +2,7 @@
 
 from urllib.parse import urlsplit
 
-from src.base62 import decode_base62, encode_base62
+from src.base62 import decode, encode
 from src.hash_table import HashTable
 
 
@@ -18,14 +18,14 @@ class URLShortener:
         if existing_code is not None:
             return existing_code
 
-        code = encode_base62(self._next_id)
+        code = encode(self._next_id)
         self._url_to_code.put(url, code)
         self._code_to_url.put(code, url)
         self._next_id += 1
         return code
 
     def expand(self, code: str) -> str | None:
-        decode_base62(code)
+        decode(code)
         return self._code_to_url.get(code)
 
     @staticmethod

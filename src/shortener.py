@@ -3,17 +3,21 @@
 from urllib.parse import urlsplit
 
 from src.base62 import decode, encode
-from src.hash_table import HashTable
+from src.hash_table import HashTable, HashTableProtocol
 
 
 class URLShortener:
-    def __init__(self, capacity: int = 8):
-        self._url_to_code = HashTable(capacity)
-        self._code_to_url = HashTable(capacity)
+    def __init__(
+        self,
+        capacity: int = 8,
+        table_factory: type[HashTableProtocol] = HashTable,
+    ):
+        self._url_to_code = table_factory(capacity)
+        self._code_to_url = table_factory(capacity)
         self._next_id = 0
 
     @property
-    def url_table(self) -> HashTable:
+    def url_table(self) -> HashTableProtocol:
         return self._url_to_code
 
     def shorten(self, url: str) -> str:

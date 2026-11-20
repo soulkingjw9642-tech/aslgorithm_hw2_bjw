@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import cast
 from urllib.parse import parse_qsl, quote, unquote, urlsplit
 
+from src.hash_table import HashTable, LinearProbingHashTable
 from src.shortener import URLShortener
 
 MAX_FORM_SIZE = 1_048_576
@@ -89,6 +90,9 @@ class ShortenerRequestHandler(BaseHTTPRequestHandler):
             message = f'<p class="error">{escape(str(error))}</p>{self._form()}'
             self._send_page("잘못된 URL", message, status=400)
             return
+        except OverflowError as error:
+            self.send_error(507, str(error))
+            return
 
         short_url = f"{self._base_url()}/{quote(code, safe='')}"
         result = (
@@ -136,12 +140,26 @@ class ShortenerRequestHandler(BaseHTTPRequestHandler):
 
     def _table_page(self) -> str:
         table = self.shortener.url_table
+        is_linear = table.strategy == "linear"
+        strategy_name = "선형 탐지" if is_linear else "개별 체이닝"
         rows = []
         base_url = self._base_url()
         for bucket_index, bucket in enumerate(table.buckets):
             nodes = []
             for url, code in bucket:
                 short_url = f"{base_url}/{quote(code, safe='')}"
+                home = table.bucket_index(url)
+                probe_slots = table.probe_trace(url)
+                if is_linear:
+                    probe_calculation = " → ".join(
+                        f"({home} + {step}) % {table.capacity} = {slot}"
+                        for step, slot in enumerate(probe_slots)
+                    )
+                else:
+                    probe_calculation = (
+                        f"Horner 시작 칸 {home}에서 연결 리스트 노드 "
+                        f"{len(probe_slots)}개 확인"
+                    )
                 trace_items = []
                 previous = 0
                 for character, code_point, remainder in table.hash_trace(url):
@@ -163,6 +181,10 @@ class ShortenerRequestHandler(BaseHTTPRequestHandler):
                     f"<p><strong>짧은 코드:</strong> {escape(code)}</p>"
                     f'<p><strong>짧은 링크:</strong> <a href="'
                     f'{escape(short_url, quote=True)}">{escape(short_url)}</a></p>'
+                    f"<p><strong>탐색한 칸:</strong> "
+                    f"{escape(' → '.join(str(slot) for slot in probe_slots))}</p>"
+                    f"<p><strong>탐색 근거:</strong> "
+                    f"{escape(probe_calculation)}</p>"
                     f"{trace}</section>"
                 )
             if not nodes:
@@ -174,8 +196,10 @@ class ShortenerRequestHandler(BaseHTTPRequestHandler):
                 f"<td>{chain}</td></tr>"
             )
         return (
-            "<p>버킷의 연결 리스트 노드와 각 키의 Horner 계산 과정입니다.</p>"
-            "<table><thead><tr><th>칸</th><th>연결 리스트</th></tr></thead>"
+            f"<p>{strategy_name} 방식으로 저장한 노드와 탐색 경로입니다. "
+            "Horner 계산 과정을 펼쳐 볼 수 있습니다.</p>"
+            "<table><thead><tr><th>칸</th>"
+            f"<th>{'선형 탐지 슬롯' if is_linear else '연결 리스트'}</th></tr></thead>"
             f"<tbody>{''.join(rows)}</tbody></table>"
         )
 
@@ -218,12 +242,25 @@ class ShortenerRequestHandler(BaseHTTPRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the URL shortener web server")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--table-type",
+        choices=("chaining", "linear"),
+        default="chaining",
+        help="collision strategy for the URL tables",
+    )
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
 
-    server = ShortenerHTTPServer(("", args.port))
-    print(f"Serving URL shortener on http://0.0.0.0:{args.port}")
+    table_factory = (
+        LinearProbingHashTable if args.table_type == "linear" else HashTable
+    )
+    shortener = URLShortener(table_factory=table_factory)
+    server = ShortenerHTTPServer(("", args.port), shortener=shortener)
+    print(
+        f"Serving URL shortener on http://0.0.0.0:{args.port} "
+        f"using {args.table_type}"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

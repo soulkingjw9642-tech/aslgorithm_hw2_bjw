@@ -6,6 +6,7 @@ import urllib.parse
 import urllib.request
 from unittest.mock import patch
 
+from src.hash_table import LinearProbingHashTable
 from src.server import ShortenerHTTPServer
 from src.shortener import URLShortener
 
@@ -132,7 +133,50 @@ class ShortenerServerTests(unittest.TestCase):
         self.assertIn(f"{self.base_url}/1", page)
         self.assertIn("→", page)
         self.assertIn("Horner", page)
+        self.assertIn("탐색한 칸", page)
         self.assertIn("<details>", page)
+
+    def test_table_shows_linear_probe_slots_and_calculations(self):
+        shortener = URLShortener(
+            capacity=4, table_factory=LinearProbingHashTable
+        )
+        self.server.shortener = shortener
+        colliding_urls = []
+        for number in range(1000):
+            url = f"https://example.com/linear-{number}"
+            if shortener.url_table.bucket_index(url) == 3:
+                colliding_urls.append(url)
+                if len(colliding_urls) == 2:
+                    break
+
+        self.assertEqual(len(colliding_urls), 2)
+        for url in colliding_urls:
+            shortener.shorten(url)
+
+        with urllib.request.urlopen(f"{self.base_url}/table") as response:
+            page = response.read().decode("utf-8")
+        self.assertIn("선형 탐지 방식", page)
+        self.assertIn("선형 탐지 슬롯", page)
+        self.assertIn("탐색한 칸", page)
+        self.assertIn("3 → 0", page)
+        self.assertIn("(3 + 1) % 4 = 0", page)
+        self.assertIn("Horner", page)
+
+    def test_linear_table_returns_507_when_full(self):
+        self.server.shortener = URLShortener(
+            capacity=1, table_factory=LinearProbingHashTable
+        )
+        self.post_url("https://example.com/first").close()
+        request = urllib.request.Request(
+            f"{self.base_url}/shorten",
+            data=urllib.parse.urlencode(
+                {"url": "https://example.com/second"}
+            ).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        with self.assertRaises(urllib.error.HTTPError) as full:
+            urllib.request.urlopen(request)
+        self.assertEqual(full.exception.code, 507)
 
     def test_invalid_url_returns_400(self):
         request = urllib.request.Request(

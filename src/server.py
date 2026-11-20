@@ -1,6 +1,7 @@
 """HTTP interface for the in-memory URL shortener."""
 
 import argparse
+import os
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import cast
@@ -99,13 +100,38 @@ class ShortenerRequestHandler(BaseHTTPRequestHandler):
         self._send_page("단축 결과", result)
 
     def _base_url(self) -> str:
-        host = self.headers.get("Host")
+        forwarded_host = self.headers.get("X-Forwarded-Host")
+        host = (
+            forwarded_host.split(",", 1)[0].strip()
+            if forwarded_host
+            else self.headers.get("Host", "")
+        )
         if not host:
             host = f"localhost:{self.server.server_port}"
-        forwarded_scheme = self.headers.get("X-Forwarded-Proto", "http")
+
+        hostname = urlsplit(f"//{host}").hostname
+        if hostname in ("localhost", "127.0.0.1", "::1"):
+            if hostname == "localhost":
+                codespace_name = os.environ.get("CODESPACE_NAME")
+                forwarding_domain = os.environ.get(
+                    "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
+                )
+                if codespace_name and forwarding_domain:
+                    forwarding_domain = forwarding_domain.strip().lstrip(".")
+                    if forwarding_domain and all(
+                        character.isalnum() or character in "-."
+                        for character in codespace_name + forwarding_domain
+                    ):
+                        return (
+                            f"https://{codespace_name}-{self.server.server_port}."
+                            f"{forwarding_domain}"
+                        )
+            return f"http://{host}"
+
+        forwarded_scheme = self.headers.get("X-Forwarded-Proto", "")
         scheme = forwarded_scheme.split(",", 1)[0].strip().lower()
         if scheme not in ("http", "https"):
-            scheme = "http"
+            scheme = "https" if forwarded_host else "http"
         return f"{scheme}://{host}"
 
     def _table_page(self) -> str:

@@ -1,0 +1,90 @@
+import threading
+import unittest
+import urllib.error
+import urllib.parse
+import urllib.request
+
+from src.server import ShortenerHTTPServer
+from src.shortener import URLShortener
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        return None
+
+
+class ShortenerServerTests(unittest.TestCase):
+    def setUp(self):
+        self.server = ShortenerHTTPServer(
+            ("127.0.0.1", 0), shortener=URLShortener(capacity=1)
+        )
+        self.thread = threading.Thread(target=self.server.serve_forever)
+        self.thread.start()
+        self.base_url = f"http://127.0.0.1:{self.server.server_port}"
+        self.no_redirect_opener = urllib.request.build_opener(NoRedirectHandler)
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+
+    def post_url(self, url):
+        body = urllib.parse.urlencode({"url": url}).encode()
+        request = urllib.request.Request(
+            f"{self.base_url}/shorten",
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        return urllib.request.urlopen(request)
+
+    def test_root_shows_url_form(self):
+        with urllib.request.urlopen(self.base_url) as response:
+            page = response.read().decode("utf-8")
+        self.assertIn('action="/shorten"', page)
+        self.assertIn('name="url"', page)
+        self.assertIn("줄이기", page)
+
+    def test_shortens_url_and_redirects_code_to_original(self):
+        url = "https://example.com/path"
+        with self.post_url(url) as response:
+            page = response.read().decode("utf-8")
+        self.assertIn(f"{self.base_url}/0", page)
+
+        with self.assertRaises(urllib.error.HTTPError) as redirect:
+            self.no_redirect_opener.open(f"{self.base_url}/0")
+        self.assertEqual(redirect.exception.code, 302)
+        self.assertEqual(redirect.exception.headers["Location"], url)
+
+    def test_unknown_code_returns_404(self):
+        with self.assertRaises(urllib.error.HTTPError) as missing:
+            urllib.request.urlopen(f"{self.base_url}/not-found")
+        self.assertEqual(missing.exception.code, 404)
+
+    def test_table_shows_chained_nodes_links_and_hash_traces(self):
+        self.post_url("https://example.com/first").close()
+        self.post_url("https://example.com/second").close()
+
+        with urllib.request.urlopen(f"{self.base_url}/table") as response:
+            page = response.read().decode("utf-8")
+        self.assertIn("Bucket 0", page)
+        self.assertIn("https://example.com/first", page)
+        self.assertIn("https://example.com/second", page)
+        self.assertIn(f"{self.base_url}/0", page)
+        self.assertIn(f"{self.base_url}/1", page)
+        self.assertIn("→", page)
+        self.assertIn("Horner", page)
+        self.assertIn("<details>", page)
+
+    def test_invalid_url_returns_400(self):
+        request = urllib.request.Request(
+            f"{self.base_url}/shorten",
+            data=urllib.parse.urlencode({"url": "ftp://example.com"}).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        with self.assertRaises(urllib.error.HTTPError) as invalid:
+            urllib.request.urlopen(request)
+        self.assertEqual(invalid.exception.code, 400)
+
+
+if __name__ == "__main__":
+    unittest.main()

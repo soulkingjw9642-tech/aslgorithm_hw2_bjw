@@ -12,6 +12,10 @@ class URLShortener:
         self._code_to_url = HashTable(capacity)
         self._next_id = 0
 
+    @property
+    def url_table(self) -> HashTable:
+        return self._url_to_code
+
     def shorten(self, url: str) -> str:
         self._validate_url(url)
         existing_code = self._url_to_code.get(url)

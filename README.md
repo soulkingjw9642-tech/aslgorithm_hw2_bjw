@@ -35,7 +35,8 @@
 | --- | --- |
 | 테스트 | `make test` |
 | 웹 서버 (포트 8000) | `make serve` |
-| 충돌 실험 | `make experiment` |
+| 선형 탐지 테이블로 웹 서버 실행 | `make serve TABLE_TYPE=linear` |
+| 체이닝·선형 탐지 비용 비교 실험 | `make experiment` |
 | 놓친 단계 따라잡기 | `sh tools/catchup.sh <단계 번호>` |
 
 외부 라이브러리는 쓰지 않습니다. Python 표준 모듈만으로 충분합니다.

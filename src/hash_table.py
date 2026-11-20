@@ -7,11 +7,15 @@ class HashTable:
     def __init__(self, capacity: int = 8):
         if type(capacity) is not int or capacity <= 0:
             raise ValueError("capacity must be a positive integer")
-        self.capacity = capacity
+        self._capacity = capacity
         self._buckets: list[list[tuple[str, str]]] = [
-            [] for _ in range(capacity)
+            [] for _ in range(self._capacity)
         ]
         self._size = 0
+
+    @property
+    def capacity(self) -> int:
+        return self._capacity
 
     @property
     def size(self) -> int:

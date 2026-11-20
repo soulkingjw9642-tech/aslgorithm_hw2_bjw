@@ -32,6 +32,15 @@ class HashTableTests(unittest.TestCase):
         table.put("b", "2")
         self.assertCountEqual(list(table.items()), [("a", "1"), ("b", "2")])
 
+    def test_stores_and_finds_entries_across_capacities(self):
+        for capacity in (1, 2, 7):
+            with self.subTest(capacity=capacity):
+                table = HashTable(capacity=capacity)
+                table.put("first", "one")
+                table.put("second", "two")
+                self.assertEqual(table.get("first"), "one")
+                self.assertEqual(table.get("second"), "two")
+
     def test_horner_hash_and_trace_explain_the_bucket(self):
         table = HashTable(capacity=7)
         trace = table.hash_trace("ab")

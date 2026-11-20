@@ -29,15 +29,36 @@ class URLShortenerTests(unittest.TestCase):
 
     def test_invalid_urls_are_rejected(self):
         shortener = URLShortener(capacity=2)
-        for url in ("", "ftp://example.com", "https:///missing-host", "/relative/path"):
+        for url in (
+            "",
+            "ftp://example.com",
+            "https:///missing-host",
+            "/relative/path",
+            " https://example.com/",
+            "https://example.com/ ",
+            "https://example.com:invalid/",
+            "https://example.com:65536/",
+        ):
             with self.subTest(url=url):
                 with self.assertRaises(ValueError):
                     shortener.shorten(url)
 
+    def test_rejects_non_string_url(self):
+        shortener = URLShortener(capacity=2)
+        with self.assertRaises(TypeError):
+            shortener.shorten(None)
+
     def test_invalid_base62_code_is_rejected(self):
         shortener = URLShortener(capacity=2)
-        with self.assertRaises(ValueError):
-            shortener.expand("!")
+        for code in ("", "!"):
+            with self.subTest(code=code):
+                with self.assertRaises(ValueError):
+                    shortener.expand(code)
+
+    def test_rejects_non_string_code(self):
+        shortener = URLShortener(capacity=2)
+        with self.assertRaises(TypeError):
+            shortener.expand(None)
 
 
 if __name__ == "__main__":

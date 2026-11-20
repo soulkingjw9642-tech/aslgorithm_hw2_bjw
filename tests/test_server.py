@@ -1,8 +1,10 @@
+import os
 import threading
 import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
+from unittest.mock import patch
 
 from src.server import ShortenerHTTPServer
 from src.shortener import URLShortener
@@ -54,6 +56,63 @@ class ShortenerServerTests(unittest.TestCase):
             self.no_redirect_opener.open(f"{self.base_url}/0")
         self.assertEqual(redirect.exception.code, 302)
         self.assertEqual(redirect.exception.headers["Location"], url)
+
+    def test_short_link_uses_forwarded_codespace_host(self):
+        body = urllib.parse.urlencode({"url": "https://example.com/forwarded"}).encode()
+        request = urllib.request.Request(
+            f"{self.base_url}/shorten",
+            data=body,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Host": "localhost:8000",
+                "X-Forwarded-Host": "sample-space-8000.app.github.dev",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+        with urllib.request.urlopen(request) as response:
+            page = response.read().decode("utf-8")
+        self.assertIn("https://sample-space-8000.app.github.dev/0", page)
+
+    def test_short_link_builds_codespace_url_when_host_is_localhost(self):
+        body = urllib.parse.urlencode({"url": "https://example.com/codespace"}).encode()
+        request = urllib.request.Request(
+            f"{self.base_url}/shorten",
+            data=body,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Host": "localhost:8000",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "CODESPACE_NAME": "sample-space",
+                "GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN": "app.github.dev",
+            },
+        ):
+            with urllib.request.urlopen(request) as response:
+                page = response.read().decode("utf-8")
+        expected = (
+            f"https://sample-space-{self.server.server_port}.app.github.dev/0"
+        )
+        self.assertIn(expected, page)
+
+    def test_localhost_without_codespace_env_uses_http(self):
+        body = urllib.parse.urlencode({"url": "https://example.com/local"}).encode()
+        request = urllib.request.Request(
+            f"{self.base_url}/shorten",
+            data=body,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Host": "localhost:8000",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            with urllib.request.urlopen(request) as response:
+                page = response.read().decode("utf-8")
+        self.assertIn("http://localhost:8000/0", page)
 
     def test_unknown_code_returns_404(self):
         with self.assertRaises(urllib.error.HTTPError) as missing:
